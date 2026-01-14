@@ -1,0 +1,691 @@
+<!-- Назовите этот файл: dashboard.html -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MC Bridge Pro v9.15 ULTIMATE</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- ВАЖНО: Используем CDN версию Socket.IO, так как локального сервера нет -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    
+    <script>
+        const { ipcRenderer } = require('electron');
+        const { exec } = require('child_process');
+    </script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { background: #0f172a; color: #e2e8f0; font-family: 'Inter', sans-serif; user-select: none; overflow: hidden; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        .title-bar { -webkit-app-region: drag; }
+        .no-drag { -webkit-app-region: no-drag; }
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        input, select { background: #1e293b; border: 1px solid #334155; color: white; outline: none; transition: 0.2s; user-select: text; }
+        input:focus, select:focus { border-color: #8b5cf6; box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2); }
+        .gift-img { width: 32px; height: 32px; object-fit: contain; }
+        .toggle-checkbox:checked { right: 0; border-color: #10B981; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #10B981; }
+    </style>
+</head>
+<body class="flex h-screen">
+
+    <!-- Всплывающее окно для настройки URL сервера -->
+    <div id="serverConfigModal" class="fixed inset-0 bg-black/95 z-[100] flex items-center justify-center p-8 no-drag">
+        <div class="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl p-6 shadow-2xl">
+            <h2 class="text-xl font-bold text-white mb-4">Настройка Подключения</h2>
+            <p class="text-sm text-slate-400 mb-4">Введите ссылку на ваше приложение Heroku (например: <code>https://my-app.herokuapp.com</code>)</p>
+            <input id="herokuUrlInput" class="w-full p-3 rounded-lg bg-slate-800 border border-slate-600 text-white mb-4" placeholder="https://...">
+            <button onclick="saveServerUrl()" class="w-full py-3 bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-lg transition">ПОДКЛЮЧИТЬСЯ</button>
+        </div>
+    </div>
+
+    <!-- SIDEBAR -->
+    <aside class="w-16 bg-slate-900 border-r border-slate-800 flex flex-col items-center py-6 z-20">
+        <div class="mb-8 text-violet-500 text-2xl"><i class="fa-solid fa-cube"></i></div>
+        <nav class="flex flex-col gap-4 w-full">
+            <button onclick="switchTab('server')" id="tab-server" class="h-10 w-10 mx-auto rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-800 hover:text-white transition no-drag" title="Сервер"><i class="fa-solid fa-server"></i></button>
+            <button onclick="switchTab('streamers')" id="tab-streamers" class="h-10 w-10 mx-auto rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-800 hover:text-white transition no-drag" title="Стримеры"><i class="fa-brands fa-tiktok"></i></button>
+            <button onclick="switchTab('game')" id="tab-game" class="h-10 w-10 mx-auto rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-800 hover:text-white transition no-drag" title="Мини-Игры"><i class="fa-solid fa-gamepad"></i></button>
+            <button onclick="switchTab('journal')" id="tab-journal" class="h-10 w-10 mx-auto rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-800 hover:text-white transition no-drag" title="Журнал"><i class="fa-solid fa-book-open"></i></button>
+            <button onclick="switchTab('library')" id="tab-library" class="h-10 w-10 mx-auto rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-800 hover:text-white transition no-drag" title="Библиотека"><i class="fa-solid fa-gift"></i></button>
+            <button onclick="switchTab('logs')" id="tab-logs" class="h-10 w-10 mx-auto rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-800 hover:text-white transition no-drag" title="Консоль"><i class="fa-solid fa-terminal"></i></button>
+        </nav>
+        <div class="mt-auto">
+             <button onclick="openHelp()" class="h-10 w-10 mx-auto rounded-xl flex items-center justify-center text-slate-500 hover:text-yellow-400 transition no-drag"><i class="fa-solid fa-circle-question text-xl"></i></button>
+        </div>
+    </aside>
+
+    <!-- MAIN AREA -->
+    <main class="flex-1 flex flex-col bg-slate-900 relative">
+        <div class="h-10 title-bar flex justify-end items-center px-4 gap-2">
+            <div id="connectionStatusTop" class="text-[10px] font-bold text-red-500 mr-4">DISCONNECTED</div>
+            <div class="text-[10px] text-slate-500 font-mono">v9.15 REMOTE</div>
+            <button onclick="window.close()" class="text-slate-500 hover:text-red-500 no-drag p-1"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+
+        <!-- SERVER TAB -->
+        <section id="view-server" class="flex-1 p-8 fade-in">
+            <h1 class="text-2xl font-bold mb-6 flex items-center gap-3"><i class="fa-solid fa-server text-violet-500"></i> Подключение</h1>
+            <div class="bg-slate-800/50 p-6 rounded-2xl border border-slate-700 max-w-xl">
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div><label class="text-xs text-slate-400 font-bold ml-1">IP АДРЕС</label><input id="mcHost" class="w-full p-3 rounded-lg mt-1 no-drag" placeholder="localhost"></div>
+                    <div><label class="text-xs text-slate-400 font-bold ml-1">ПОРТ</label><input id="mcPort" type="number" class="w-full p-3 rounded-lg mt-1 no-drag" value="25565"></div>
+                </div>
+                <div class="grid grid-cols-2 gap-4 mb-6">
+                    <div><label class="text-xs text-slate-400 font-bold ml-1">ИМЯ БОТА</label><input id="botName" class="w-full p-3 rounded-lg mt-1 text-green-400 font-mono no-drag" value="TikTokBot"></div>
+                    <div><label class="text-xs text-slate-400 font-bold ml-1">MAX COMBO</label><input id="comboLimit" type="number" class="w-full p-3 rounded-lg mt-1 text-yellow-400 font-bold no-drag" value="50"></div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <button id="btnConnectMc" onclick="toggleMc()" class="flex-1 py-3 rounded-lg font-bold bg-violet-600 hover:bg-violet-500 text-white transition shadow-lg shadow-violet-900/20 no-drag">ПОДКЛЮЧИТЬ БОТА</button>
+                    <div id="mcStatus" class="flex items-center gap-2 px-4 py-3 rounded-lg bg-slate-900 border border-slate-700 text-slate-500 text-sm font-bold"><div class="w-2 h-2 rounded-full bg-red-500 status-dot"></div> OFFLINE</div>
+                </div>
+                
+                <div class="mt-6 pt-4 border-t border-slate-700">
+                    <button onclick="localStorage.removeItem('herokuUrl'); location.reload()" class="text-xs text-slate-500 hover:text-white underline no-drag">Сбросить URL сервера</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- GAME TAB -->
+        <section id="view-game" class="flex-1 p-8 hidden fade-in flex flex-col h-full">
+            <h1 class="text-2xl font-bold mb-6 flex items-center gap-3"><i class="fa-solid fa-gamepad text-orange-500"></i> Управление Игрой</h1>
+            
+            <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700 max-w-2xl mb-6">
+                <!-- Mode Selector -->
+                <div class="mb-4">
+                    <label class="text-xs text-slate-400 font-bold uppercase">Режим Игры</label>
+                    <div class="grid grid-cols-4 gap-2 mt-2">
+                        <button onclick="setMode('run')" id="mode-run" class="game-mode-btn p-2 rounded-xl border border-slate-600 bg-slate-700 hover:bg-slate-600 transition no-drag text-[10px] font-bold flex flex-col items-center gap-1 active-mode"><i class="fa-solid fa-person-running text-lg text-cyan-400"></i> ПОБЕГ</button>
+                        <button onclick="setMode('climb')" id="mode-climb" class="game-mode-btn p-2 rounded-xl border border-slate-600 bg-slate-700 hover:bg-slate-600 transition no-drag text-[10px] font-bold flex flex-col items-center gap-1"><i class="fa-solid fa-mountain text-lg text-yellow-400"></i> ГОРЫ</button>
+                        <button onclick="setMode('survive')" id="mode-survive" class="game-mode-btn p-2 rounded-xl border border-slate-600 bg-slate-700 hover:bg-slate-600 transition no-drag text-[10px] font-bold flex flex-col items-center gap-1"><i class="fa-solid fa-skull text-lg text-red-400"></i> ВЫЖИВАНИЕ</button>
+                        <button onclick="setMode('hunt')" id="mode-hunt" class="game-mode-btn p-2 rounded-xl border border-slate-600 bg-slate-700 hover:bg-slate-600 transition no-drag text-[10px] font-bold flex flex-col items-center gap-1"><i class="fa-solid fa-crosshairs text-lg text-pink-400"></i> ОХОТА</button>
+                    </div>
+                </div>
+
+                <!-- Hunt Mob Selector (Hidden by default) -->
+                <div id="huntMobContainer" class="mb-4 hidden">
+                    <label class="text-xs text-slate-400 font-bold uppercase">Цель Охоты</label>
+                    <select id="huntMobSelect" class="w-full p-3 rounded-xl mt-2 bg-slate-900 border border-slate-600 text-white font-bold no-drag">
+                        <option value="any">🐾 ЛЮБЫЕ (Мирные)</option>
+                        <option value="sheep">🐑 Овца</option>
+                        <option value="cow">🐄 Корова</option>
+                        <option value="pig">🐖 Свинья</option>
+                        <option value="chicken">🐔 Курица</option>
+                        <option value="horse">🐎 Лошадь</option>
+                        <option value="zombie">🧟 Зомби</option>
+                        <option value="skeleton">🦴 Скелет</option>
+                        <option value="spider">🕷️ Паук</option>
+                        <option value="creeper">💣 Крипер</option>
+                        <option value="enderman">👽 Эндермен</option>
+                        <option value="witch">🧙 Ведьма</option>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-6 mb-6">
+                    <div>
+                        <label id="lblTarget" class="text-xs text-slate-400 font-bold uppercase">Дистанция (Блоки)</label>
+                        <input id="gameTarget" type="number" class="w-full p-4 rounded-xl mt-2 text-xl font-bold text-orange-400 no-drag bg-slate-900" value="500">
+                    </div>
+                    <div>
+                        <label id="lblWins" class="text-xs text-slate-400 font-bold uppercase">Побед нужно</label>
+                        <input id="gameWins" type="number" class="w-full p-4 rounded-xl mt-2 text-xl font-bold text-green-400 no-drag bg-slate-900" value="3">
+                    </div>
+                </div>
+                <div class="flex gap-4">
+                    <button id="btnGameStart" onclick="toggleGame()" class="flex-1 py-4 rounded-xl font-bold bg-green-600 hover:bg-green-500 text-white transition shadow-lg shadow-green-900/20 no-drag text-lg"><i class="fa-solid fa-play mr-2"></i> НАЧАТЬ ИГРУ</button>
+                    <button onclick="resetGameStats()" class="px-6 rounded-xl bg-slate-700 hover:bg-slate-600 text-slate-300 no-drag font-bold"><i class="fa-solid fa-rotate-right"></i></button>
+                </div>
+            </div>
+
+            <!-- Game Status -->
+            <div class="grid grid-cols-3 gap-4 max-w-2xl">
+                <div class="bg-slate-800/50 p-4 rounded-xl border border-slate-700 text-center"><div class="text-xs text-slate-500 font-bold uppercase">Прогресс</div><div id="statDist" class="text-2xl font-mono text-white mt-1">0</div></div>
+                <div class="bg-slate-800/50 p-4 rounded-xl border border-slate-700 text-center"><div class="text-xs text-slate-500 font-bold uppercase">Таймер</div><div id="statTimer" class="text-2xl font-mono text-blue-400 mt-1">--</div></div>
+                <div class="bg-slate-800/50 p-4 rounded-xl border border-slate-700 text-center relative">
+                    <div class="text-xs text-slate-500 font-bold uppercase">Счет</div>
+                    <div id="statWins" class="text-2xl font-mono text-green-400 mt-1">0/3</div>
+                </div>
+            </div>
+            
+            <div class="mt-4 text-xs text-slate-500 text-center max-w-2xl flex items-center justify-center gap-2">
+                <i class="fa-solid fa-keyboard"></i>
+                <span>Глобальные клавиши: <b>NumPad +</b> и <b>NumPad -</b> работают даже свернутым!</span>
+            </div>
+        </section>
+
+        <!-- STREAMERS -->
+        <section id="view-streamers" class="flex-1 p-8 hidden fade-in flex flex-col">
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-2xl font-bold flex items-center gap-3"><i class="fa-brands fa-tiktok text-pink-500"></i> Стримеры</h1>
+                <button onclick="addStreamer()" class="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-700 transition flex items-center gap-2 no-drag"><i class="fa-solid fa-plus text-green-400"></i> Добавить</button>
+            </div>
+            <div id="streamersGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto pb-10"></div>
+        </section>
+
+        <!-- JOURNAL -->
+        <section id="view-journal" class="flex-1 p-8 hidden fade-in flex flex-col h-full">
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-2xl font-bold flex items-center gap-3"><i class="fa-solid fa-book-open text-blue-500"></i> Журнал Подарков</h1>
+                <div class="text-xs text-slate-500 mr-auto ml-4 bg-slate-800 px-2 py-1 rounded border border-slate-700">
+                    <i class="fa-solid fa-magic text-yellow-500"></i> Авто-добавление в библиотеку активно
+                </div>
+                <button onclick="document.getElementById('journalGrid').innerHTML=''" class="text-slate-500 hover:text-white px-2 no-drag"><i class="fa-solid fa-trash"></i></button>
+            </div>
+            <div id="journalGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 overflow-y-auto pb-10 content-start flex-1">
+                <!-- Logs here -->
+            </div>
+        </section>
+
+        <!-- LIBRARY -->
+        <section id="view-library" class="flex-1 p-8 hidden fade-in flex flex-col h-full">
+            <h1 class="text-2xl font-bold mb-6 flex items-center gap-3"><i class="fa-solid fa-gift text-yellow-500"></i> Библиотека</h1>
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 mb-6 flex gap-3 items-end">
+                <div class="w-24"><label class="text-[10px] text-slate-500 uppercase font-bold">ID</label><input id="libAddId" class="w-full p-2 rounded bg-slate-900 border border-slate-600 text-xs no-drag" placeholder="5655"></div>
+                <div class="flex-1"><label class="text-[10px] text-slate-500 uppercase font-bold">Название</label><input id="libAddName" class="w-full p-2 rounded bg-slate-900 border border-slate-600 text-xs no-drag" placeholder="Rose"></div>
+                <div class="flex-1"><label class="text-[10px] text-slate-500 uppercase font-bold">Картинка (URL)</label><input id="libAddImg" class="w-full p-2 rounded bg-slate-900 border border-slate-600 text-xs no-drag" placeholder="https://..."></div>
+                <button onclick="addToLibrary()" class="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-bold text-xs no-drag h-[34px]">СОХРАНИТЬ</button>
+            </div>
+            <div id="fullLibGrid" class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-3 overflow-y-auto pb-10 content-start flex-1"></div>
+        </section>
+
+        <!-- LOGS -->
+        <section id="view-logs" class="flex-1 p-0 hidden flex flex-col bg-black h-full">
+            <div class="p-2 bg-slate-800 border-b border-slate-700 flex justify-between items-center shrink-0">
+                <span class="text-xs font-mono text-slate-400 ml-2">CONSOLE</span>
+                <button onclick="document.getElementById('console').innerHTML=''" class="text-slate-500 hover:text-white px-2 no-drag"><i class="fa-solid fa-trash"></i></button>
+            </div>
+            <div id="console" class="flex-1 overflow-y-auto p-4 font-mono text-xs space-y-1 console-log pb-2"></div>
+            <div class="p-2 bg-slate-900 border-t border-slate-800 flex gap-2 shrink-0">
+                <div class="relative flex-1"><span class="absolute left-3 top-2 text-slate-500 font-mono">></span><input id="cmdInput" class="w-full bg-slate-800 border border-slate-700 rounded pl-6 pr-3 py-2 text-xs font-mono text-green-400 outline-none no-drag" placeholder="Команда..." onkeydown="if(event.key==='Enter') sendCommand()"></div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Остальные модальные окна остаются без изменений, но я их сверну для краткости -->
+    <!-- HELP MODAL -->
+    <div id="helpModal" class="fixed inset-0 bg-black/80 hidden z-50 flex items-center justify-center p-8 backdrop-blur-sm no-drag">
+        <div class="bg-slate-900 border border-slate-700 w-full max-w-4xl h-full max-h-[800px] rounded-2xl flex flex-col shadow-2xl overflow-hidden relative">
+            <button onclick="closeHelp()" class="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center no-drag"><i class="fa-solid fa-xmark"></i></button>
+            <div class="p-8 overflow-y-auto text-slate-300">
+                <h2 class="text-2xl font-bold text-white mb-6">Инструкция (Клиент)</h2>
+                <div class="space-y-6">
+                    <p>Этот клиент подключается к серверу на Heroku. Весь функционал сохранен.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- EDITOR MODAL, EQUIP MODAL, PICKER MODAL - ОНИ ТАКИЕ ЖЕ КАК В ОРИГИНАЛЕ -->
+    <div id="editor" class="fixed inset-0 bg-black/90 hidden z-40 flex items-center justify-center p-4 no-drag backdrop-blur-sm">
+        <div class="bg-slate-800 w-full max-w-6xl h-[95vh] rounded-2xl border border-slate-600 flex flex-col shadow-2xl overflow-hidden">
+            <div class="p-4 border-b border-slate-700 bg-slate-900 flex justify-between items-center">
+                <h3 class="font-bold text-white">Редактор Стримера</h3>
+                <button onclick="closeEditor()" class="text-slate-400 hover:text-white no-drag"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            
+            <div class="flex flex-1 overflow-hidden">
+                <!-- Sidebar -->
+                <div class="w-72 bg-slate-900 p-6 border-r border-slate-700 flex flex-col gap-6 overflow-y-auto">
+                    <div>
+                        <label class="text-[10px] uppercase font-bold text-slate-500">TikTok Username</label>
+                        <input id="editTik" class="w-full p-2 mt-1 rounded border border-slate-700 bg-slate-800 no-drag focus:border-pink-500">
+                    </div>
+                    <div>
+                        <label class="text-[10px] uppercase font-bold text-slate-500">Minecraft Player</label>
+                        <input id="editMc" class="w-full p-2 mt-1 rounded border border-slate-700 bg-slate-800 no-drag focus:border-green-500">
+                    </div>
+                    
+                    <hr class="border-slate-700">
+                    
+                    <!-- TTS SETTINGS -->
+                    <div class="flex flex-col gap-4">
+                        <h4 class="text-xs font-bold text-pink-400 uppercase flex items-center gap-2"><i class="fa-solid fa-microphone-lines"></i> Озвучка чата</h4>
+                        
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-slate-300">Включить TTS</span>
+                            <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                                <input type="checkbox" name="toggle" id="ttsEnabled" class="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer no-drag"/>
+                                <label for="ttsEnabled" class="toggle-label block overflow-hidden h-5 rounded-full bg-slate-700 cursor-pointer no-drag"></label>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="text-[10px] uppercase font-bold text-slate-500">Движок</label>
+                            <select id="ttsEngine" class="w-full p-2 mt-1 rounded border border-slate-700 bg-slate-800 no-drag text-xs" onchange="toggleTtsFields()">
+                                <option value="web">Браузер (Web API)</option>
+                                <option value="sapi">Windows SAPI 5 (RHVoice)</option>
+                                <option value="cmd">Своя команда (CMD)</option>
+                            </select>
+                        </div>
+
+                        <!-- Voice Select (Web/SAPI) -->
+                        <div id="ttsVoiceContainer">
+                            <label class="text-[10px] uppercase font-bold text-slate-500">Голос</label>
+                            <select id="ttsVoice" class="w-full p-2 mt-1 rounded border border-slate-700 bg-slate-800 no-drag text-xs"></select>
+                            <div class="flex items-center gap-2 mt-2">
+                                <input type="checkbox" id="ttsRandom" class="no-drag">
+                                <label for="ttsRandom" class="text-xs text-slate-400">Рандомный голос</label>
+                            </div>
+                        </div>
+
+                        <!-- Custom Command Input (CMD) -->
+                        <div id="ttsCmdContainer" class="hidden">
+                            <label class="text-[10px] uppercase font-bold text-slate-500">Команда (Шаблон)</label>
+                            <input id="ttsCmdTemplate" class="w-full p-2 mt-1 rounded border border-slate-700 bg-slate-800 no-drag text-xs font-mono text-yellow-400" placeholder='say.exe "{text}"'>
+                            <p class="text-[8px] text-slate-500 mt-1">Используйте <b>{text}</b> вместо текста</p>
+                        </div>
+
+                        <div>
+                            <label class="text-[10px] uppercase font-bold text-slate-500">Доступно для:</label>
+                            <select id="ttsFilter" class="w-full p-2 mt-1 rounded border border-slate-700 bg-slate-800 no-drag text-xs">
+                                <option value="all">Всех пользователей</option>
+                                <option value="follower">Подписчиков (Followers)</option>
+                                <option value="subscriber">Платных Сабов (Subscribers)</option>
+                                <option value="moderator">Модераторов</option>
+                                <option value="gifter">Топ Донатеров</option>
+                            </select>
+                        </div>
+                        
+                        <button onclick="testTTS()" class="w-full py-2 bg-slate-700 hover:bg-slate-600 text-white rounded text-xs font-bold no-drag"><i class="fa-solid fa-play"></i> Тест Голоса</button>
+                    </div>
+
+                    <button onclick="delStreamer()" class="mt-auto w-full py-2 border border-red-500/20 text-red-400 hover:bg-red-500/10 rounded no-drag">Удалить</button>
+                </div>
+
+                <!-- Main Triggers Area -->
+                <div class="flex-1 flex flex-col bg-slate-800/50">
+                    <div class="p-4 border-b border-slate-700 flex justify-between items-center">
+                        <span class="font-bold text-yellow-500">Триггеры подарков</span>
+                        <button onclick="openPicker()" class="bg-yellow-600 hover:bg-yellow-500 text-white px-3 py-1 rounded text-xs font-bold no-drag">+ Выбрать из Библиотеки</button>
+                    </div>
+                    <!-- Headers for the grid -->
+                    <div class="grid grid-cols-12 gap-2 px-6 py-2 text-[10px] text-slate-500 font-bold uppercase border-b border-slate-700/50">
+                        <div class="col-span-4">Подарок</div>
+                        <div class="col-span-2 text-center">Триггер (Every)</div>
+                        <div class="col-span-2 text-center">Кол-во (Amount)</div>
+                        <div class="col-span-4">Действие</div>
+                    </div>
+                    <div id="giftList" class="flex-1 overflow-y-auto p-4 space-y-2"></div>
+                </div>
+            </div>
+            
+            <div class="p-4 border-t border-slate-700 bg-slate-900 flex justify-end gap-3">
+                <button onclick="closeEditor()" class="text-slate-400 px-4 no-drag">Отмена</button>
+                <button onclick="saveStreamer()" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded font-bold no-drag">Сохранить</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- EQUIPMENT MODAL -->
+    <div id="equipModal" class="fixed inset-0 bg-black/90 hidden z-50 flex items-center justify-center p-4 no-drag backdrop-blur-sm">
+        <div class="bg-slate-800 w-[500px] rounded-xl border border-slate-600 flex flex-col shadow-2xl">
+            <div class="p-4 border-b border-slate-700 bg-slate-900 flex justify-between items-center">
+                <h3 class="font-bold text-white"><i class="fa-solid fa-shirt text-blue-400"></i> Экипировка Моба</h3>
+                <button onclick="closeEquip()" class="text-slate-400 hover:text-white no-drag"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-[10px] uppercase font-bold text-slate-500">Правая Рука (Оружие)</label>
+                        <select id="eqMain" class="w-full p-2 mt-1 bg-slate-900 border border-slate-600 rounded text-xs text-white"></select>
+                    </div>
+                    <div>
+                        <label class="text-[10px] uppercase font-bold text-slate-500">Левая Рука (Щит)</label>
+                        <select id="eqOff" class="w-full p-2 mt-1 bg-slate-900 border border-slate-600 rounded text-xs text-white"></select>
+                    </div>
+                </div>
+                <hr class="border-slate-700/50">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="text-[10px] uppercase font-bold text-slate-500">Шлем</label>
+                        <select id="eqHead" class="w-full p-2 mt-1 bg-slate-900 border border-slate-600 rounded text-xs text-white"></select>
+                    </div>
+                    <div>
+                        <label class="text-[10px] uppercase font-bold text-slate-500">Нагрудник</label>
+                        <select id="eqChest" class="w-full p-2 mt-1 bg-slate-900 border border-slate-600 rounded text-xs text-white"></select>
+                    </div>
+                    <div>
+                        <label class="text-[10px] uppercase font-bold text-slate-500">Поножи</label>
+                        <select id="eqLegs" class="w-full p-2 mt-1 bg-slate-900 border border-slate-600 rounded text-xs text-white"></select>
+                    </div>
+                    <div>
+                        <label class="text-[10px] uppercase font-bold text-slate-500">Ботинки</label>
+                        <select id="eqBoots" class="w-full p-2 mt-1 bg-slate-900 border border-slate-600 rounded text-xs text-white"></select>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 border-t border-slate-700 bg-slate-900 flex justify-end">
+                <button onclick="saveEquip()" class="bg-green-600 hover:bg-green-500 text-white px-6 py-2 rounded font-bold text-sm">Применить</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- PICKER MODAL -->
+    <div id="picker" class="fixed inset-0 bg-black/90 hidden z-50 flex items-center justify-center p-4 no-drag">
+        <div class="bg-slate-800 w-[700px] h-[80vh] rounded-xl border border-slate-600 flex flex-col shadow-2xl">
+            <div class="p-4 border-b border-slate-700 flex gap-2">
+                <input id="pickerSearch" class="flex-1 bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm outline-none no-drag" placeholder="Поиск...">
+                <button onclick="closePicker()" class="w-8 text-slate-400 hover:text-white no-drag"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="pickerGrid" class="flex-1 overflow-y-auto p-4 grid grid-cols-4 sm:grid-cols-5 gap-3 content-start"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- CLIENT SIDE LOGIC ---
+        let socket = null;
+        let streamers = [], activeTT = {}, isMcConnected = false, isGameRunning = false, curIdx = -1, tempGifts = [];
+        let proxyConfig = { enabled: false, string: '' };
+        let customGifts = [];
+        let currentGameMode = 'run';
+        let currentEquipIdx = -1;
+
+        // Копия списков из оригинала для работоспособности UI
+        const EQ_LIST = {
+            main: [{id:'',n:'Нет (Пусто)'},{id:'diamond_sword',n:'Алмазный меч'}, {id:'netherite_sword',n:'Незеритовый меч'},{id:'iron_sword',n:'Железный меч'}, {id:'golden_sword',n:'Золотой меч'},{id:'diamond_axe',n:'Алмазный топор'}, {id:'netherite_axe',n:'Незеритовый топор'},{id:'bow',n:'Лук'}, {id:'crossbow',n:'Арбалет'}, {id:'trident',n:'Трезубец'},{id:'stick',n:'Палка (Knockback)'}],
+            off: [{id:'',n:'Нет (Пусто)'}, {id:'shield',n:'Щит'}, {id:'totem_of_undying',n:'Тотем'}, {id:'torch',n:'Факел'}],
+            head: [{id:'',n:'Нет (Пусто)'}, {id:'diamond_helmet',n:'Алмазный шлем'}, {id:'netherite_helmet',n:'Незеритовый шлем'},{id:'iron_helmet',n:'Железный шлем'}, {id:'golden_helmet',n:'Золотой шлем'}, {id:'carved_pumpkin',n:'Тыква'}],
+            chest: [{id:'',n:'Нет (Пусто)'}, {id:'diamond_chestplate',n:'Алмазный нагрудник'}, {id:'netherite_chestplate',n:'Незеритовый нагрудник'},{id:'iron_chestplate',n:'Железный нагрудник'}, {id:'golden_chestplate',n:'Золотой нагрудник'}],
+            legs: [{id:'',n:'Нет (Пусто)'}, {id:'diamond_leggings',n:'Алмазные поножи'}, {id:'netherite_leggings',n:'Незеритовые поножи'},{id:'iron_leggings',n:'Железные поножи'}, {id:'golden_leggings',n:'Золотые поножи'}],
+            boots: [{id:'',n:'Нет (Пусто)'}, {id:'diamond_boots',n:'Алмазные ботинки'}, {id:'netherite_boots',n:'Незеритовые ботинки'},{id:'iron_boots',n:'Железные ботинки'}, {id:'golden_boots',n:'Золотые ботинки'}]
+        };
+
+        const MOBS = [
+            {group:"💀 БОССЫ", items:[{id:'warden',n:'Варден'}, {id:'wither',n:'Иссушитель'}, {id:'ender_dragon',n:'Дракон'}, {id:'ravager',n:'Разоритель'}, {id:'elder_guardian',n:'Древний Страж'}]},
+            {group:"🧟 ВРАЖДЕБНЫЕ", items:[{id:'zombie',n:'Зомби'}, {id:'skeleton',n:'Скелет'}, {id:'creeper',n:'Крипер'}, {id:'spider',n:'Паук'}, {id:'witch',n:'Ведьма'}, {id:'enderman',n:'Эндермен'}, {id:'phantom',n:'Фантом'}, {id:'drowned',n:'Утопленник'}, {id:'husk',n:'Кадавр'}, {id:'stray',n:'Зимогор'}, {id:'slime',n:'Слизень'}]},
+            {group:"⚔️ РЕЙДЕРЫ", items:[{id:'pillager',n:'Разбойник'}, {id:'vindicator',n:'Поборник'}, {id:'evoker',n:'Вызыватель'}, {id:'vex',n:'Досаждатель'}, {id:'illusioner',n:'Иллюзор'}]},
+            {group:"🔥 АД", items:[{id:'piglin',n:'Пиглин'}, {id:'piglin_brute',n:'Жестокий Пиглин'}, {id:'zombified_piglin',n:'Зомби-пиглин'}, {id:'hoglin',n:'Хоглин'}, {id:'zoglin',n:'Зоглин'}, {id:'blaze',n:'Ифрит'}, {id:'ghast',n:'Гаст'}, {id:'magma_cube',n:'Лавовый куб'}, {id:'wither_skeleton',n:'Визер-скелет'}, {id:'strider',n:'Страйдер'}]},
+            {group:"🌱 НЕЙТРАЛЬНЫЕ", items:[{id:'iron_golem',n:'Голем'}, {id:'snow_golem',n:'Снеговик'}, {id:'villager',n:'Житель'}, {id:'wandering_trader',n:'Торговец'}, {id:'wolf',n:'Волк'}, {id:'fox',n:'Лиса'}, {id:'panda',n:'Панда'}, {id:'polar_bear',n:'Белый медведь'}, {id:'bee',n:'Пчела'}, {id:'goat',n:'Коза'}, {id:'llama',n:'Лама'}]},
+            {group:"🐷 ЖИВОТНЫЕ", items:[{id:'cow',n:'Корова'}, {id:'pig',n:'Свинья'}, {id:'sheep',n:'Овца'}, {id:'chicken',n:'Курица'}, {id:'horse',n:'Лошадь'}, {id:'donkey',n:'Осел'}, {id:'cat',n:'Кошка'}, {id:'ocelot',n:'Оцелот'}, {id:'rabbit',n:'Кролик'}]},
+            {group:"🌊 ВОДНЫЕ", items:[{id:'guardian',n:'Страж'}, {id:'dolphin',n:'Дельфин'}, {id:'squid',n:'Спрут'}, {id:'glow_squid',n:'Свет. спрут'}, {id:'turtle',n:'Черепаха'}, {id:'axolotl',n:'Аксолотль'}]},
+            {group:"🎲 СОБЫТИЯ", items:[{id:'roulette',n:'🎰 РУЛЕТКА (Event)'}]},
+            {group:"⛏️ ОСОБОЕ", items:[{id:'tnt',n:'ТНТ (Взрыв)'}, {id:'lightning_bolt',n:'Молния'}, {id:'fireball',n:'Шар Гаста'}, {id:'arrow',n:'Стрела'}, {id:'potion',n:'Зелье вреда'}, {id:'god_chest',n:'🎁 СУПЕР СУНДУК (Loot)'}]}
+        ];
+        const BASE_LIB=[{id:'event_like',n:"Лайк",i:"❤️",c:'event'},{id:'event_follow',n:"Подписка",i:"➕",c:'event'},{id:'event_share',n:"Репост",i:"↗️",c:'event'},{id:'event_join',n:"Вход",i:"👋",c:'event'},{id:5655,n:"Rose",i:"🌹",c:'gift'},{id:5269,n:"TikTok",i:"🎵",c:'gift'},{id:5650,n:"Doughnut",i:"🍩",c:'gift'},{id:5760,n:"Panda",i:"🐼",c:'gift'},{id:5487,n:"Finger Heart",i:"🫶",c:'gift'},{id:6042,n:"GG",i:"🎮",c:'gift'},{id:5658,n:"Ice Cream",i:"🍦",c:'gift'},{id:5585,n:"Welcome",i:"👋",c:'gift'}];
+
+        function init() {
+            const s = localStorage.getItem('v9Config');
+            const l = localStorage.getItem('v9CustomLib');
+            const url = localStorage.getItem('herokuUrl');
+
+            if(l) customGifts = JSON.parse(l);
+            if(s) {
+                const c = JSON.parse(s);
+                document.getElementById('mcHost').value = c.host||''; document.getElementById('mcPort').value = c.port||25565; document.getElementById('botName').value = c.botName||'TikTokBot';
+                streamers = c.streamers||[]; proxyConfig = c.proxy || {enabled:false, string:''};
+            }
+            populateEquipSelects();
+            switchTab('server'); renderGrid(); renderLibraryTab();
+
+            // Check connection setup
+            if (!url) {
+                document.getElementById('serverConfigModal').classList.remove('hidden');
+            } else {
+                connectToHeroku(url);
+            }
+        }
+
+        function saveServerUrl() {
+            const url = document.getElementById('herokuUrlInput').value.trim();
+            if (!url) return alert('Введите URL!');
+            localStorage.setItem('herokuUrl', url);
+            document.getElementById('serverConfigModal').classList.add('hidden');
+            connectToHeroku(url);
+        }
+
+        function connectToHeroku(url) {
+            console.log("Connecting to:", url);
+            socket = io(url);
+            
+            socket.on('connect', () => {
+                document.getElementById('connectionStatusTop').innerText = "CONNECTED";
+                document.getElementById('connectionStatusTop').className = "text-[10px] font-bold text-green-500 mr-4";
+                console.log("Connected to Heroku!");
+            });
+
+            socket.on('disconnect', () => {
+                document.getElementById('connectionStatusTop').innerText = "DISCONNECTED";
+                document.getElementById('connectionStatusTop').className = "text-[10px] font-bold text-red-500 mr-4";
+            });
+
+            // Re-attach listeners
+            socket.on('play-tts', (text) => { playTTS(text); });
+            socket.on('tts-message', (data) => {
+                const s = streamers.find(x => x.tiktok === data.nickname) || streamers[0];
+                const tts = s && s.tts ? s.tts : {};
+                playTTS(`${data.nickname} говорит: ${data.text}`, data.voice, data.random, tts.engine, tts.cmdTemplate);
+            });
+            socket.on('gift-log', handleGiftLog);
+            socket.on('game-status', handleGameStatus);
+            socket.on('mc-status', handleMcStatus);
+            socket.on('tt-status',d=>{activeTT[d.id]=d.active;renderGrid();}); 
+            socket.on('tt-sync',m=>{activeTT=m;renderGrid();});
+            socket.on('log', d => { const c = document.getElementById('console'); const row = document.createElement('div'); row.className = `break-words ${d.type==='error'?'text-red-400':d.type==='gift'?'text-pink-400':'text-slate-400'}`; row.innerHTML = `[${d.time}] ${d.message}`; c.appendChild(row); c.scrollTop = c.scrollHeight; });
+        }
+
+        // --- HANDLERS ---
+        function handleGiftLog(data) {
+            const grid = document.getElementById('journalGrid');
+            const card = document.createElement('div');
+            card.className = "bg-slate-800 rounded-xl p-3 border border-slate-700 flex gap-3 items-center fade-in";
+            const time = new Date().toLocaleTimeString();
+            card.innerHTML = `<div class="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center shrink-0 overflow-hidden"><img src="${data.img}" class="w-full h-full object-cover" onerror="this.src='https://cdn-icons-png.flaticon.com/512/847/847969.png'"></div><div class="overflow-hidden"><div class="font-bold text-sm truncate text-white">${data.user}</div><div class="text-[10px] text-yellow-500 font-bold truncate">${data.giftName} (ID: ${data.giftId})</div><div class="text-[8px] text-slate-500 mt-1">${time}</div></div>`;
+            grid.insertBefore(card, grid.firstChild);
+            if (grid.children.length > 50) grid.lastChild.remove();
+
+            const allGifts = [...BASE_LIB, ...customGifts];
+            const exists = allGifts.find(g => g.id == data.giftId);
+            if (!exists) {
+                customGifts.push({ id: data.giftId, n: data.giftName, img: data.img, c: 'custom', defCost: 1 });
+                saveCustomLib();
+            }
+        }
+
+        function handleGameStatus(data) {
+            isGameRunning = data.running;
+            const btn = document.getElementById('btnGameStart');
+            if(data.running) { btn.innerHTML = '<i class="fa-solid fa-stop mr-2"></i> СТОП'; btn.className = btn.className.replace('bg-green-600','bg-red-600').replace('green-500','red-500'); } else { btn.innerHTML = '<i class="fa-solid fa-play mr-2"></i> НАЧАТЬ ИГРУ'; btn.className = btn.className.replace('bg-red-600','bg-green-600').replace('red-500','green-500'); }
+            let progText = ""; 
+            if(data.mode === 'run') progText = `${Math.floor(data.currentVal)} / ${data.targetVal}m`; 
+            else if(data.mode === 'climb') progText = `Y: ${Math.floor(data.currentVal)} / ${data.targetVal}`; 
+            else if(data.mode === 'survive') progText = `${Math.ceil(data.currentVal)}s`; 
+            else if(data.mode === 'hunt') progText = `${data.wins} / ${data.targetWins} kills`;
+            
+            document.getElementById('statDist').innerText = progText; document.getElementById('statWins').innerText = `${data.wins} / ${data.targetWins}`; document.getElementById('statTimer').innerText = data.timer > 0 ? data.timer.toFixed(1) + 's' : '--';
+        }
+
+        function handleMcStatus(s) {
+            isMcConnected=s; const btn=document.getElementById('btnConnectMc'), ind=document.getElementById('mcStatus'); 
+            if(s){btn.innerText='ОТКЛЮЧИТЬ БОТА';btn.className=btn.className.replace('bg-violet-600','bg-red-600').replace('violet-500','red-500');ind.innerHTML='<div class="w-2 h-2 rounded-full bg-green-500 status-dot"></div> ONLINE';ind.classList.add('text-green-500');}
+            else{btn.innerText='ПОДКЛЮЧИТЬ БОТА';btn.className=btn.className.replace('bg-red-600','bg-violet-600').replace('red-500','violet-500');ind.innerHTML='<div class="w-2 h-2 rounded-full bg-red-500 status-dot"></div> OFFLINE';ind.classList.remove('text-green-500');}
+        }
+
+        // --- GLOBAL KEY LISTENERS VIA ELECTRON IPC ---
+        if (ipcRenderer) {
+            ipcRenderer.on('trigger-win-add', () => { console.log("Hotkey: +1 Win"); if(socket) socket.emit('admin-win-add'); });
+            ipcRenderer.on('trigger-win-rem', () => { console.log("Hotkey: -1 Win"); if(socket) socket.emit('admin-win-rem'); });
+            ipcRenderer.on('trigger-timer-reset', () => { console.log("Hotkey: Reset"); if(socket) socket.emit('reset-timer'); });
+        }
+
+        // --- TTS SYSTEM (Client Side Logic) ---
+        let availableVoices = [];
+        let sapiVoices = [];
+
+        function getSapiVoices(cb) {
+            const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Add-Type -AssemblyName System.Speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Name }"`;
+            exec(cmd, (err, stdout, stderr) => {
+                if(err) { console.error('SAPI Error:', err); return cb([]); }
+                const voices = stdout.trim().split(/\r?\n/).filter(v => v);
+                cb(voices);
+            });
+        }
+
+        function speakSapi(text, voiceName) {
+            const safeText = text.replace(/'/g, "''").replace(/"/g, ''); 
+            const psScript = `
+            [Console]::OutputEncoding = [System.Text.Encoding]::UTF8;
+            Add-Type -AssemblyName System.Speech;
+            $s = New-Object System.Speech.Synthesis.SpeechSynthesizer;
+            if ('${voiceName}') { try { $s.SelectVoice('${voiceName}') } catch {} };
+            $s.Speak('${safeText}');
+            `;
+            const child = exec('powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command -', (err) => {
+                if(err) console.error('SAPI Speak Error:', err);
+            });
+            child.stdin.write(psScript);
+            child.stdin.end();
+        }
+
+        function toggleTtsFields() {
+            const engine = document.getElementById('ttsEngine').value;
+            const voiceCont = document.getElementById('ttsVoiceContainer');
+            const cmdCont = document.getElementById('ttsCmdContainer');
+            
+            if (engine === 'cmd') {
+                voiceCont.classList.add('hidden');
+                cmdCont.classList.remove('hidden');
+            } else {
+                voiceCont.classList.remove('hidden');
+                cmdCont.classList.add('hidden');
+                loadVoices();
+            }
+        }
+
+        function loadVoices() {
+            const engine = document.getElementById('ttsEngine').value;
+            const sel = document.getElementById('ttsVoice');
+            sel.innerHTML = '';
+
+            if (engine === 'web') {
+                availableVoices = window.speechSynthesis.getVoices();
+                availableVoices.sort((a,b) => (a.lang.includes('ru') && !b.lang.includes('ru')) ? -1 : 0);
+                availableVoices.forEach((v) => {
+                    const opt = document.createElement('option'); opt.value = v.name; opt.innerText = `${v.name} (${v.lang})`; sel.appendChild(opt);
+                });
+            } else if (engine === 'sapi') {
+                sel.innerHTML = '<option>Загрузка списка голосов...</option>';
+                getSapiVoices((voices) => {
+                    sapiVoices = voices;
+                    sel.innerHTML = '';
+                    if(voices.length === 0) {
+                        const opt = document.createElement('option'); opt.innerText = "Голоса не найдены"; sel.appendChild(opt);
+                    }
+                    voices.forEach(v => { const opt = document.createElement('option'); opt.value = v; opt.innerText = v; sel.appendChild(opt); });
+                });
+            }
+        }
+        window.speechSynthesis.onvoiceschanged = () => { if(document.getElementById('ttsEngine').value === 'web') loadVoices(); };
+        setTimeout(loadVoices, 500);
+
+        function playTTS(text, voiceName, isRandom, engine, cmdTemplate) {
+            if (!text) return;
+            if (!engine) engine = 'web';
+
+            if (engine === 'cmd') {
+                if (cmdTemplate) {
+                    const safeText = text.replace(/"/g, '\\"');
+                    const command = cmdTemplate.replace('{text}', safeText);
+                    exec(command, (err) => { if(err) console.error('CMD TTS Error:', err); });
+                }
+            } else if (engine === 'sapi') {
+                let voice = voiceName;
+                if (isRandom && sapiVoices.length > 0) voice = sapiVoices[Math.floor(Math.random() * sapiVoices.length)];
+                speakSapi(text, voice);
+            } else {
+                window.speechSynthesis.cancel();
+                const utter = new SpeechSynthesisUtterance(text);
+                if (isRandom && availableVoices.length > 0) utter.voice = availableVoices[Math.floor(Math.random() * availableVoices.length)];
+                else if (voiceName) { const v = availableVoices.find(x => x.name === voiceName); if (v) utter.voice = v; }
+                window.speechSynthesis.speak(utter);
+            }
+        }
+
+        function testTTS() {
+            const engine = document.getElementById('ttsEngine').value;
+            const voice = document.getElementById('ttsVoice').value;
+            const random = document.getElementById('ttsRandom').checked;
+            const cmdTmp = document.getElementById('ttsCmdTemplate').value;
+            playTTS("Тест озвучки. Один, два, три.", voice, random, engine, cmdTmp);
+        }
+
+        // --- UI & CONFIG FUNCS ---
+        function saveConfig() { localStorage.setItem('v9Config', JSON.stringify({ host: document.getElementById('mcHost').value, port: document.getElementById('mcPort').value, botName: document.getElementById('botName').value, streamers, proxy: proxyConfig })); }
+        function saveCustomLib() { localStorage.setItem('v9CustomLib', JSON.stringify(customGifts)); renderLibraryTab(); }
+        
+        function switchTab(t) {
+            ['server','streamers','logs','library','game','journal'].forEach(x => { document.getElementById(`view-${x}`).classList.add('hidden'); document.getElementById(`tab-${x}`).classList.remove('bg-slate-800','text-white','shadow-lg'); document.getElementById(`tab-${x}`).classList.add('text-slate-400'); });
+            document.getElementById(`view-${t}`).classList.remove('hidden'); document.getElementById(`tab-${t}`).classList.add('bg-slate-800','text-white','shadow-lg'); document.getElementById(`tab-${t}`).classList.remove('text-slate-400');
+        }
+        function openHelp() { document.getElementById('helpModal').classList.remove('hidden'); }
+        function closeHelp() { document.getElementById('helpModal').classList.add('hidden'); }
+        
+        // ... (Функции setMode, toggleGame, resetGameStats и другие UI функции скопированы из оригинала без изменений) ...
+        function setMode(mode) {
+            currentGameMode = mode;
+            document.querySelectorAll('.game-mode-btn').forEach(b => { b.classList.remove('bg-slate-900', 'border-green-500'); b.classList.add('bg-slate-700', 'border-slate-600'); });
+            const btn = document.getElementById(`mode-${mode}`); btn.classList.remove('bg-slate-700', 'border-slate-600'); btn.classList.add('bg-slate-900', 'border-green-500');
+            const lbl = document.getElementById('lblTarget'); const lblW = document.getElementById('lblWins'); const inp = document.getElementById('gameTarget'); const huntContainer = document.getElementById('huntMobContainer');
+            inp.disabled = false; huntContainer.classList.add('hidden'); 
+            if(mode === 'run') { lbl.innerText = "Дистанция (Блоки)"; inp.value = 500; lblW.innerText="Побед нужно"; }
+            else if(mode === 'climb') { lbl.innerText = "Высота (Y)"; inp.value = 200; lblW.innerText="Побед нужно"; }
+            else if(mode === 'survive') { lbl.innerText = "Время (Секунды)"; inp.value = 120; lblW.innerText="Побед нужно"; }
+            else if(mode === 'hunt') { lbl.innerText = "---"; inp.value = 0; inp.disabled = true; lblW.innerText="Цель: Убийств"; document.getElementById('gameWins').value = 10; huntContainer.classList.remove('hidden'); }
+        }
+
+        function toggleGame() {
+            if(!isMcConnected) return alert('Сначала подключите бота к серверу!');
+            const targetVal = document.getElementById('gameTarget').value; const wins = document.getElementById('gameWins').value; const target = streamers.length > 0 ? streamers[0].minecraft : null; const huntMob = document.getElementById('huntMobSelect').value;
+            if(!target) return alert('Нет стримера (Target)!');
+            if(isGameRunning) { if(socket) socket.emit('stop-game'); } else {
+                let config = { mode: currentGameMode, wins: wins, target: target, huntMob: huntMob };
+                if (currentGameMode === 'run') config.distance = targetVal; 
+                else if (currentGameMode === 'climb') config.height = targetVal; 
+                else if (currentGameMode === 'survive') config.time = targetVal;
+                if(socket) socket.emit('start-game', config);
+            }
+        }
+        function resetGameStats() { if(socket) socket.emit('reset-game'); }
+        function toggleMc() { if(isMcConnected) socket.emit('disconnect-mc'); else { const c = { host: document.getElementById('mcHost').value, port: document.getElementById('mcPort').value, botName: document.getElementById('botName').value, comboLimit: document.getElementById('comboLimit').value }; if(!c.host) return alert('Введите IP!'); if(socket) socket.emit('connect-mc', c); saveConfig(); } }
+        function sendCommand() { const i=document.getElementById('cmdInput'); const v=i.value.trim(); if(!v)return; if(!isMcConnected)return alert('Бот не подключен'); if(socket) socket.emit('send-command',v); i.value=''; }
+        function addToLibrary(){ const id=document.getElementById('libAddId').value, n=document.getElementById('libAddName').value, i=document.getElementById('libAddImg').value; if(!id||!n)return alert('Info?'); customGifts.push({id:isNaN(id)?id:parseInt(id),n:n,img:i,defCost:1,c:'custom'}); saveCustomLib(); }
+        function renderLibraryTab(){
+            const g=document.getElementById('fullLibGrid'); g.innerHTML='';
+            const allGifts = [...BASE_LIB, ...customGifts];
+            const unique = new Map();
+            allGifts.forEach(item => { if(!unique.has(item.n)) unique.set(item.n, item); });
+            unique.forEach(x=>{
+                const d=document.createElement('div'); d.className='bg-slate-800 p-2 rounded border border-slate-700 flex flex-col items-center opacity-70';
+                const i = x.img?`<img src="${x.img}" class="gift-img">`:`<div class="text-xl">${x.i}</div>`;
+                d.innerHTML=`${i}<div class="text-[10px] font-bold mt-1 text-center truncate w-full">${x.n}</div><div class="text-[8px] text-slate-500">${x.id}</div>`;
+                g.appendChild(d);
+            });
+        }
+        function renderGrid(){ const g=document.getElementById('streamersGrid'); g.innerHTML=''; streamers.forEach((s,i)=>{const a=activeTT[s.tiktok], d=document.createElement('div'); d.className=`p-4 rounded-xl border transition group no-drag ${a?'bg-slate-800/80 border-green-500/50 shadow-lg':'bg-slate-800 border-slate-700'}`; d.innerHTML=`<div class="flex justify-between items-start mb-3"><div class="flex items-center gap-3"><div class="w-10 h-10 rounded-full flex items-center justify-center text-lg ${a?'bg-green-500 text-white':'bg-slate-700 text-slate-400'}"><i class="fa-solid fa-user"></i></div><div><div class="font-bold text-white text-sm">@${s.tiktok}</div><div class="text-[10px] text-slate-400">${s.minecraft}</div></div></div><button onclick="toggleStreamer(${i})" class="w-8 h-5 rounded-full relative transition ${a?'bg-green-500':'bg-slate-600'}"><div class="w-3 h-3 bg-white rounded-full absolute top-1 transition-all ${a?'left-4':'left-1'}"></div></button></div><div class="flex justify-between items-center mt-2 border-t border-slate-700/50 pt-2"><div class="flex flex-col"><span class="text-[10px] text-slate-500">${s.gifts.length} команд</span><span class="text-[10px] ${s.tts && s.tts.enabled ? 'text-pink-400' : 'text-slate-600'}"><i class="fa-solid fa-microphone"></i> TTS ${s.tts && s.tts.enabled ? 'ON' : 'OFF'}</span></div><button onclick="edit(${i})" class="text-xs text-slate-400 hover:text-white px-2 py-1 rounded hover:bg-slate-700 transition">Настроить</button></div>`; g.appendChild(d); }); }
+        function toggleStreamer(i){const s=streamers[i]; s.proxy=proxyConfig; activeTT[s.tiktok]?socket.emit('disconnect-tt',s.tiktok):socket.emit('connect-tt',s);}
+        function addStreamer(){ curIdx=-1; document.getElementById('editTik').value=''; document.getElementById('editMc').value=''; tempGifts=[]; renderGifts(); resetTTSUI(); document.getElementById('editor').classList.remove('hidden'); }
+        function edit(i){ curIdx=i; const s=streamers[i]; document.getElementById('editTik').value=s.tiktok; document.getElementById('editMc').value=s.minecraft; tempGifts=JSON.parse(JSON.stringify(s.gifts)); if (s.tts) {document.getElementById('ttsEnabled').checked = s.tts.enabled || false;document.getElementById('ttsEngine').value = s.tts.engine || 'web';document.getElementById('ttsVoice').value = s.tts.voice || '';document.getElementById('ttsRandom').checked = s.tts.random || false;document.getElementById('ttsFilter').value = s.tts.filter || 'all';document.getElementById('ttsCmdTemplate').value = s.tts.cmdTemplate || '';} else resetTTSUI();renderGifts(); toggleTtsFields();setTimeout(() => { if (s.tts && s.tts.voice) document.getElementById('ttsVoice').value = s.tts.voice; }, 500);document.getElementById('editor').classList.remove('hidden'); }
+        function resetTTSUI() {document.getElementById('ttsEnabled').checked = false;document.getElementById('ttsEngine').value = 'web';document.getElementById('ttsVoice').selectedIndex = 0;document.getElementById('ttsRandom').checked = false;document.getElementById('ttsFilter').value = 'all';document.getElementById('ttsCmdTemplate').value = '';toggleTtsFields();}
+        function closeEditor(){ document.getElementById('editor').classList.add('hidden'); }
+        function saveStreamer(){ const t=document.getElementById('editTik').value, m=document.getElementById('editMc').value; if(!t||!m)return alert('Поля обязательны!'); const ttsSettings = {enabled: document.getElementById('ttsEnabled').checked,engine: document.getElementById('ttsEngine').value,voice: document.getElementById('ttsVoice').value,random: document.getElementById('ttsRandom').checked,filter: document.getElementById('ttsFilter').value,cmdTemplate: document.getElementById('ttsCmdTemplate').value};const o={tiktok:t, minecraft:m, gifts:tempGifts, tts: ttsSettings}; curIdx===-1?streamers.push(o):streamers[curIdx]=o; saveConfig(); renderGrid(); closeEditor(); }
+        function delStreamer(){ if(confirm('Удалить?')){ streamers.splice(curIdx,1); saveConfig(); renderGrid(); closeEditor(); }}
+        function populateEquipSelects() {const populate = (id, list) => {const el = document.getElementById(id);el.innerHTML = '';list.forEach(x => {const opt = document.createElement('option');opt.value = x.id;opt.innerText = x.n;el.appendChild(opt);});};populate('eqMain', EQ_LIST.main);populate('eqOff', EQ_LIST.off);populate('eqHead', EQ_LIST.head);populate('eqChest', EQ_LIST.chest);populate('eqLegs', EQ_LIST.legs);populate('eqBoots', EQ_LIST.boots);}
+        function openEquip(i) {currentEquipIdx = i;const g = tempGifts[i];const eq = g.equip || { main:'', off:'', head:'', chest:'', legs:'', boots:'' };document.getElementById('eqMain').value = eq.main || '';document.getElementById('eqOff').value = eq.off || '';document.getElementById('eqHead').value = eq.head || '';document.getElementById('eqChest').value = eq.chest || '';document.getElementById('eqLegs').value = eq.legs || '';document.getElementById('eqBoots').value = eq.boots || '';document.getElementById('equipModal').classList.remove('hidden');}
+        function closeEquip() {document.getElementById('equipModal').classList.add('hidden');currentEquipIdx = -1;}
+        function saveEquip() {if (currentEquipIdx === -1) return;const eq = {main: document.getElementById('eqMain').value,off: document.getElementById('eqOff').value,head: document.getElementById('eqHead').value,chest: document.getElementById('eqChest').value,legs: document.getElementById('eqLegs').value,boots: document.getElementById('eqBoots').value};tempGifts[currentEquipIdx].equip = eq;genCmd(currentEquipIdx); renderGifts();closeEquip();}
+        function renderGifts(){ const l=document.getElementById('giftList'); l.innerHTML=''; tempGifts.forEach((g,i)=>{ const div=document.createElement('div'); div.className='bg-slate-900 p-2 rounded border border-slate-700 grid grid-cols-12 gap-2 items-center'; const icon=g.img?`<img src="${g.img}" class="gift-img">`:`<span class="text-lg">${g.icon||'🎁'}</span>`; const hasEquip = g.equip && (g.equip.main || g.equip.chest);const equipBtn = g.isSpawn ? `<button onclick="openEquip(${i})" class="w-6 h-6 rounded flex items-center justify-center no-drag transition ${hasEquip ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-white'}" title="Экипировка"><i class="fa-solid fa-shirt text-[10px]"></i></button>` : '';div.innerHTML=`<div class="col-span-4 flex items-center gap-2 overflow-hidden"><div class="shrink-0">${icon}</div><div class="text-yellow-500 font-bold text-xs truncate">${g.name}</div></div><div class="col-span-2 text-center"><input type="number" class="w-full bg-slate-800 rounded p-1 text-center text-xs no-drag text-cyan-400 font-bold" value="${g.count||1}" onchange="updateCount(${i},this.value)" title="Every N gifts"></div><div class="col-span-2 text-center"><input type="number" class="w-full bg-slate-800 rounded p-1 text-center text-xs no-drag text-green-400 font-bold" value="${g.amount||1}" onchange="updateAmount(${i},this.value)" title="Multiply Action"></div><div class="col-span-4 flex gap-1"><div class="flex-1 flex gap-1 items-center"><select onchange="updateMode(${i},this.value)" class="bg-slate-800 rounded p-1 w-12 text-[10px] no-drag text-slate-300"><option value="raw" ${!g.isSpawn?'selected':''}>CMD</option><option value="spawn" ${g.isSpawn?'selected':''}>Mob</option></select>${g.isSpawn? `<div class="flex-1 flex gap-1 min-w-0"><select onchange="updateMob(${i},this.value)" class="bg-slate-800 rounded p-1 flex-1 text-[10px] text-green-400 font-bold no-drag min-w-0">${MOBS.map(gr=>`<optgroup label="${gr.group}">${gr.items.map(m=>`<option value="${m.id}" ${g.mobId===m.id?'selected':''}>${m.n}</option>`).join('')}</optgroup>`).join('')}</select>${equipBtn}</div>`: `<input class="bg-slate-800 rounded p-1 flex-1 text-[10px] text-green-400 font-mono no-drag w-full" value="${g.command}" onchange="updateCmd(${i},this.value)">`}</div><button onclick="testGift(${i})" class="text-slate-500 hover:text-green-400 px-1 no-drag"><i class="fa-solid fa-play"></i></button><button onclick="remGift(${i})" class="text-slate-600 hover:text-red-500 px-1 no-drag"><i class="fa-solid fa-trash"></i></button></div>`; l.appendChild(div); }); }
+        function updateCount(i,v){tempGifts[i].count=parseInt(v)||1;} function updateAmount(i,v){tempGifts[i].amount=parseInt(v)||1;}
+        function updateCmd(i,v){tempGifts[i].command=v;} function updateMode(i,v){tempGifts[i].isSpawn=(v==='spawn');if(tempGifts[i].isSpawn&&!tempGifts[i].mobId)tempGifts[i].mobId='zombie';genCmd(i);renderGifts();} function updateMob(i,v){tempGifts[i].mobId=v;genCmd(i);renderGifts();} function remGift(i){tempGifts.splice(i,1);renderGifts();}
+        function genCmd(i){ const g=tempGifts[i]; if (g.mobId==='roulette') { tempGifts[i].command=`!roulette {target} {user}`; return; }if(g.mobId==='god_chest'){tempGifts[i].command=`/execute at {target} run setblock ~ ~ ~ chest{Items:[{Slot:13b,id:"minecraft:enchanted_golden_apple",Count:64b}]}`;return;} else if(g.mobId==='potion'){tempGifts[i].command=`/execute at {target} run summon potion ~ ~3 ~ {Item:{id:"minecraft:splash_potion",Count:1b,tag:{CustomPotionEffects:[{Id:7,Duration:20,Amplifier:1}],Potion:"minecraft:harming"}}}`;return;} else if(g.mobId==='fireball'){tempGifts[i].command=`/execute at {target} run summon fireball ~ ~3 ~ {ExplosionPower:2,direction:[0.0,-2.0,0.0]}`;return;} else if(g.mobId==='tnt'){tempGifts[i].command=`/execute at {target} run summon tnt ~ ~ ~`;return;} let nbt = "{CustomNameVisible:1b,CustomName:'{\"text\":\"{user}\",\"color\":\"gold\"}'";if (g.equip) {const eq = g.equip;const hasHand = eq.main || eq.off;const hasArmor = eq.head || eq.chest || eq.legs || eq.boots;if (hasHand) {const main = eq.main ? `{id:"minecraft:${eq.main}",Count:1b}` : '{}';const off = eq.off ? `{id:"minecraft:${eq.off}",Count:1b}` : '{}';nbt += `,HandItems:[${main},${off}]`;}if (hasArmor) {const boots = eq.boots ? `{id:"minecraft:${eq.boots}",Count:1b}` : '{}';const legs = eq.legs ? `{id:"minecraft:${eq.legs}",Count:1b}` : '{}';const chest = eq.chest ? `{id:"minecraft:${eq.chest}",Count:1b}` : '{}';const head = eq.head ? `{id:"minecraft:${eq.head}",Count:1b}` : '{}';nbt += `,ArmorItems:[${boots},${legs},${chest},${head}]`;}}nbt += "}";tempGifts[i].command=`/execute at {target} run summon ${g.mobId} ~ ~ ~ ${nbt}`; }
+        function testGift(i){ if(!isMcConnected)return alert('Bot offline'); const g=tempGifts[i]; if(g.isSpawn) genCmd(i); socket.emit('test-trigger', {command: g.command,count: g.count || 1, amount: g.amount || 1, user: 'TestUser'});}
+        function openPicker(){renderPicker();document.getElementById('picker').classList.remove('hidden');} function closePicker(){document.getElementById('picker').classList.add('hidden');}
+        function renderPicker(){ const g=document.getElementById('pickerGrid'); g.innerHTML=''; const t=document.getElementById('pickerSearch').value.toLowerCase(); const allGifts = [...BASE_LIB, ...customGifts];const unique = new Map();allGifts.forEach(item => { if(!unique.has(item.n)) unique.set(item.n, item); });Array.from(unique.values()).filter(x=>x.n.toLowerCase().includes(t)||x.id.toString().includes(t)).forEach(x=>{ const el=document.createElement('div'); el.className='bg-slate-700 p-2 rounded cursor-pointer hover:bg-slate-600 flex flex-col items-center no-drag'; el.onclick=()=>{tempGifts.push({id:x.id,name:x.n,icon:x.i,img:x.img,count:x.defCost||1,amount:1,command:'/say Hi',isSpawn:false});renderGifts();closePicker();}; const i=x.img?`<img src="${x.img}" class="gift-img">`:`<div class="text-xl">${x.i}</div>`; el.innerHTML=`${i}<div class="text-[10px] text-center w-full truncate">${x.n}</div>`; g.appendChild(el); }); }
+        document.getElementById('pickerSearch').addEventListener('input',renderPicker);
+
+        init();
+    </script>
+</body>
+</html>

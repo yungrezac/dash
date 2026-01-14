@@ -1,0 +1,35 @@
+{
+  "name": "tiktok-mc-bridge",
+  "version": "6.1.0",
+  "description": "Professional TikTok Live to Minecraft Bridge",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "author": "User",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2",
+    "mineflayer": "^4.20.1",
+    "socket.io": "^4.7.2",
+    "tiktok-live-connector": "^1.1.0",
+    "https-proxy-agent": "^7.0.2"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.tiktok.mcbridge",
+    "productName": "TikTok MC Bridge Pro",
+    "win": {
+      "target": ["nsis"],
+      "icon": "icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
